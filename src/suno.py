@@ -14,6 +14,7 @@ from . import selectors
 from .browser import BrowserManager
 from .config import Settings
 from .jobs import Clip, GenerationError, Job
+from .tagging import tag_mp3
 
 TERMINAL_STATUSES = {"complete", "error"}
 _MAX_TRACKED_CLIPS = 500
@@ -33,6 +34,7 @@ class RawClip:
     image_url: str | None = None
     created_at: str | None = None  # Suno 回傳的 ISO8601 UTC 字串（見 _wait_new_ids）
     lyrics: str = ""               # Suno 把歌詞放在 metadata.prompt
+    tags: str = ""                 # 曲風，Suno 放在 metadata.tags
 
 
 def parse_feed_payload(payload: Any) -> list[RawClip]:
@@ -56,6 +58,7 @@ def parse_feed_payload(payload: Any) -> list[RawClip]:
                     image_url=node.get("image_url") or None,
                     created_at=node.get("created_at") or None,
                     lyrics=(meta.get("prompt") or "") if isinstance(meta, dict) else "",
+                    tags=(meta.get("tags") or "") if isinstance(meta, dict) else "",
                 )
             for v in node.values():
                 walk(v)
@@ -353,6 +356,17 @@ class SunoRunner:
                 if rc.image_url and await self._download(
                         rc.image_url, out_dir / f"{rc.id}.jpeg"):
                     clip.image_filename = f"{rc.id}.jpeg"
+                # Suno 的 CDN 原檔什麼標籤都沒有，自己補上。下游（CLI、API、
+                # 呼叫端下載）拿到的就都是自帶歌名／曲風／歌詞／封面的檔案。
+                if clip.downloadable:
+                    tag_mp3(
+                        out_dir / f"{rc.id}.mp3",
+                        title=rc.title or "Suno",
+                        album=rc.tags,
+                        lyrics=rc.lyrics,
+                        cover_path=(out_dir / clip.image_filename)
+                        if clip.image_filename else None,
+                    )
             clips.append(clip)
         return clips
 

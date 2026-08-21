@@ -57,6 +57,26 @@ POST /api/generate
 
 送單那一步立刻回 `job_id`，不等生成。整段跑完通常 2 到 4 分鐘。
 
+### 下載下來的 mp3 自帶標籤與封面
+
+Suno 的 CDN 原檔什麼都沒有（ffprobe 看只有一個 `comment=made with suno` 與 encoder），
+網站那顆下載鈕給的才是加工過的版本，但 feed 裡沒有宣告它的網址。
+
+所以自己寫：下載當下歌名、曲風、歌詞、封面全部都在手上，存檔後直接寫進 ID3。
+
+| ID3 幀 | 內容 |
+|---|---|
+| `TIT2` | 歌名（clip 的 title）|
+| `TPE1` | `Suno` |
+| `TALB` | 曲風（clip 的 `metadata.tags`）|
+| `USLT` | 歌詞（clip 的 `metadata.prompt`）|
+| `APIC` | 封面（`image_url` 抓下來那張）|
+
+歌詞用 **USLT** 不用 SYLT：播放器對 SYLT 的支援普遍很差。要放帶時間軸的 LRC 也是放
+同一個幀，讀得懂的播放器就會當動態歌詞用。
+
+寫標籤失敗只記一行 log，不影響整單 —— 音檔本身是好的。
+
 ### 撞到防機器人驗證碼會自動換帳號
 
 Suno 會對信任度不足的帳號要求 Cloudflare 驗證碼（按下 Create 之前先打

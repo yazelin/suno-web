@@ -200,3 +200,19 @@ def test_feed_parsing_survives_missing_metadata_prompt():
 
     clips = parse_feed_payload({"clips": [{"id": "abc", "status": "complete"}]})
     assert clips[0].lyrics == ""
+
+
+def test_feed_parsing_picks_up_style_tags():
+    """曲風在 metadata.tags，寫進 ID3 的 album 欄位"""
+    from src.suno import parse_feed_payload
+
+    clips = parse_feed_payload({"clips": [{
+        "id": "abc", "status": "complete",
+        "metadata": {"tags": "cute quirky march, female vocal"},
+    }]})
+    assert clips[0].tags == "cute quirky march, female vocal"
+
+
+def test_feed_parsing_survives_missing_tags():
+    from src.suno import parse_feed_payload
+    assert parse_feed_payload({"clips": [{"id": "a", "status": "complete"}]})[0].tags == ""
