@@ -230,3 +230,18 @@ def test_overview_lists_each_account_when_multi_worker(tmp_path, monkeypatch):
     assert "300（30 單）" in body and "100（10 單）" in body
     assert "已休眠" in body   # worker 1 的瀏覽器沒起來
     admin_db.reset_for_tests()
+
+
+def test_history_marks_jobs_that_were_redispatched(client, tmp_path):
+    """被驗證碼擋下、換過帳號的單要在歷史頁看得出來——成功的那些畫面上跟一般
+    的單長得一樣，不標的話只有 log 追得到"""
+    login(client)
+    client.post("/api/generate", json={"prompt": "換過帳號的曲子"})
+
+    store = JobStore(str(tmp_path / "jobs.db"))
+    job = store.list_recent(1)[0]
+    job.params["tried_workers"] = [0, 2]
+    store.save(job)
+
+    body = client.get("/admin/history").text
+    assert "帳號 0、2 被要求驗證碼，已改派" in body

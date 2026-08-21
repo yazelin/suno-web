@@ -84,7 +84,7 @@ curl -s -H "x-api-key: YOUR_KEY" \
 |---|---|---|
 | `queue_full` | 佇列滿了，`POST /api/generate` 直接回 HTTP 429，不會產生 job | 等前面的單跑完再送，或把 `QUEUE_MAX_SIZE` 調大 |
 | `not_logged_in` | 頁面上出現 Sign in，登入態過期了 | 請人工在服務那台機器跑 `suno-web login`，agent 自己救不了這個 |
-| `captcha_required` | Suno 對這個帳號要求 Cloudflare 驗證碼，程式點不過。實測綁帳號信任度：新帳號會被要求、有生成歷史的老帳號不會。解法是先用真人開的瀏覽器手動生一兩單養信任 |
+| `captcha_required` | Suno 對這個帳號要求 Cloudflare 驗證碼，程式點不過。實測綁帳號信任度：新帳號會被要求、有生成歷史的老帳號不會。**撞到時會自動改派給還沒試過的帳號重跑，四個帳號全被要求才回這個碼**，此時 `error_message` 會列出試過哪幾個。解法是用真人開的瀏覽器手動生一兩單養信任 |
 | `submit_failed` | 表單填不進去、Create 按不下去，或按了之後 feed 沒出現新 clip | 先讀 `error_message`。訊息是「按了 Create 但 feed 沒出現新 clip」時，最常見的原因是帳號點數用完，查 `/api/health` 的 `credits`；訊息提到 selector 過期就是 Suno 改版了，要修 `src/selectors.py` |
 | `generation_timeout` | 超過這一單的 `timeout`（預設 600 秒）還沒到終態 | 重送一次；要生長曲子就在送單時把 `timeout` 調大 |
 | `clip_error` | Suno 自己把某首 clip 標成 error。這個字串出現在 clip 的 `status` 欄位，不會出現在 job 的 `error` | 看每個 clip 的 `status` 判斷是哪一首壞掉。整單如果一首都沒下載到，job 的 `error` 會是 `download_failed` |

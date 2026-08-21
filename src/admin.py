@@ -534,6 +534,12 @@ def _history_row(job: Job, url) -> str:
         state += f'<div class="muted">{_esc(job.error)}</div>'
         if job.error_message:
             state += f'<div class="muted">{_esc(job.error_message[:70])}</div>'
+    tried = (job.params or {}).get("tried_workers")
+    if tried:
+        # 被防機器人驗證碼擋下、換帳號重跑過的單。成功的那些在畫面上跟一般
+        # 的單長得一樣，不標出來就只有 log 看得到。
+        who = "、".join(str(i) for i in tried)
+        state += f'<div class="muted">帳號 {who} 被要求驗證碼，已改派</div>'
     elapsed = "-"
     if job.started_at and job.finished_at:
         elapsed = f"{job.finished_at - job.started_at:.0f} 秒"

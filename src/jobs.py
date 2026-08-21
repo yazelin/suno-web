@@ -8,9 +8,12 @@ import sqlite3
 import threading
 import time
 import uuid
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -63,6 +66,11 @@ class Job:
 _KEEP_JOBS = 1000
 # 一單要多少點（實測：一單 10 點、出 4 首）
 CREDITS_PER_JOB = 10
+
+# 唯一會觸發「換帳號重試」的錯誤碼。這個碼不是猜的：只有 Suno 自己在
+# /api/c/check 回 required:true 時才會標上，等於它明講要驗證碼。其他錯誤
+# （登入態過期、selector 過期、點數用完）換帳號救不了，換了只是白燒。
+_REDISPATCH_CODE = "captcha_required"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -189,9 +197,12 @@ Runner = Callable[["Job"], Awaitable[list[Clip]]]
 class JobQueue:
     """一個 worker 一條佇列，同一個 worker 內序列處理。
 
-    每個 worker 綁一個 Suno 帳號。派工用輪流（round-robin）而不是「誰有空
-    給誰」：多帳號的目的就是把每月配額攤平，永遠優先給第一個帳號等於白做。
-    輪到的那個正忙就順延給下一個閒著的，都在忙才排進最短的那條佇列。
+    每個 worker 綁一個 Suno 帳號。派工規則見 `_pick`（預設點數優先，輪流只
+    在點數同分或還沒觀測到點數的帳號之間用）。輪到的那個正忙就順延給下一個
+    閒著的，都在忙才排進最短的那條佇列。
+
+    帳號被 Suno 舉了防機器人驗證碼時，這一單會自動改派給還沒試過的帳號，
+    見 `_requeue_other`。
 
     同一個帳號不能同時跑兩單：一個 worker 只有一個瀏覽器分頁，而輪詢期間
     會定期 reload 它，兩單並行會互相把頁面導覽掉。
@@ -270,6 +281,30 @@ class JobQueue:
                 return self._next_by_rotation(top)
         return self._next_by_rotation(unknown or candidates)
 
+    def _requeue_other(self, job: Job, failed_index: int) -> bool:
+        """把這一單改派給還沒試過的帳號，回報有沒有排出去。
+
+        只給帳號層級的問題用（目前只有 `captcha_required`）。試過的帳號記在
+        `job.params["tried_workers"]` 並且跟著 job 存進 DB，所以最多試到帳號
+        用完就一定收斂，不會在佇列之間繞圈。
+        """
+        tried = set(job.params.get("tried_workers") or [])
+        tried.add(failed_index)
+        candidates = [i for i in range(len(self._queues))
+                      if i not in tried and not self._queues[i].full()]
+        if not candidates:
+            job.params["tried_workers"] = sorted(tried)
+            return False
+
+        idx = self._next_by_rotation(candidates)
+        job.params["tried_workers"] = sorted(tried)
+        job.params["worker"] = idx
+        job.status = "queued"
+        job.started_at = None
+        self._store.save(job)
+        self._queues[idx].put_nowait(job.id)
+        return True
+
     def submit(self, params: dict) -> Job:
         if all(q.full() for q in self._queues):
             raise QueueFullError()
@@ -304,6 +339,17 @@ class JobQueue:
                         raise GenerationError("download_failed", "一首可下載的都沒有")
                     job.status = "done"
                 except GenerationError as e:
+                    if e.code == _REDISPATCH_CODE:
+                        if self._requeue_other(job, index):
+                            log.warning(
+                                "job %s：帳號 %s 被要求防機器人驗證碼，改派給帳號 %s",
+                                job.id, index, job.params["worker"])
+                            continue
+                        tried = job.params.get("tried_workers") or [index]
+                        log.warning("job %s：帳號 %s 全被要求驗證碼，這一單失敗",
+                                    job.id, "、".join(str(i) for i in tried))
+                        e.message = (f"{e.message} 已試過帳號 "
+                                     f"{'、'.join(str(i) for i in tried)}，全部都被要求。")
                     job.status = "error"
                     job.error = e.code
                     job.error_message = e.message or None
@@ -330,6 +376,10 @@ class JobQueue:
                         self._store.save(job)
                     except Exception:
                         pass
+            finally:
+                # 沒放回去的話 _idle_candidates() 永遠回空list，_pick 每次都
+                # 掉進「都在忙」的分支挑最短佇列，等於一直打同一個帳號。
+                self._busy[index] = False
 
 
 def cleanup_expired(generated_dir: str, retention_days: int) -> int:
