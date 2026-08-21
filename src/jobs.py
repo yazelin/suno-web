@@ -25,6 +25,7 @@ class Clip:
     downloadable: bool = False
     filename: str | None = None            # 已落地音檔檔名（generated/<job_id>/ 下）
     image_filename: str | None = None
+    lyrics: str = ""                       # Suno 實際唱的歌詞（來自 clip 的 metadata.prompt）
 
     def to_api(self, job_id: str) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -35,6 +36,8 @@ class Clip:
             d["audio_url"] = f"/api/jobs/{job_id}/files/{self.filename}"
         if self.image_filename:
             d["image_url"] = f"/api/jobs/{job_id}/files/{self.image_filename}"
+        if self.lyrics:
+            d["lyrics"] = self.lyrics
         return d
 
 

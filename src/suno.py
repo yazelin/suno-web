@@ -32,6 +32,7 @@ class RawClip:
     audio_url: str | None = None
     image_url: str | None = None
     created_at: str | None = None  # Suno 回傳的 ISO8601 UTC 字串（見 _wait_new_ids）
+    lyrics: str = ""               # Suno 把歌詞放在 metadata.prompt
 
 
 def parse_feed_payload(payload: Any) -> list[RawClip]:
@@ -54,6 +55,7 @@ def parse_feed_payload(payload: Any) -> list[RawClip]:
                     audio_url=node.get("audio_url") or None,
                     image_url=node.get("image_url") or None,
                     created_at=node.get("created_at") or None,
+                    lyrics=(meta.get("prompt") or "") if isinstance(meta, dict) else "",
                 )
             for v in node.values():
                 walk(v)
@@ -343,7 +345,7 @@ class SunoRunner:
         clips: list[Clip] = []
         for rc in raws:
             clip = Clip(id=rc.id, title=rc.title, status=rc.status,
-                        duration=rc.duration)
+                        duration=rc.duration, lyrics=rc.lyrics)
             if rc.status == "complete" and rc.audio_url:
                 if await self._download(rc.audio_url, out_dir / f"{rc.id}.mp3"):
                     clip.downloadable = True

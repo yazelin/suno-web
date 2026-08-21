@@ -178,3 +178,25 @@ def test_captcha_required_turns_into_its_own_error_code():
     with pytest.raises(GenerationError) as e2:
         asyncio.run(runner._wait_new_ids(set(), 0.0, timeout=0.01))
     assert e2.value.code == "submit_failed"
+
+
+def test_feed_parsing_picks_up_lyrics_from_metadata_prompt():
+    """Suno 把歌詞放在 clip 的 metadata.prompt，撈出來才能跟著歌一起回給使用者"""
+    from src.suno import parse_feed_payload
+
+    payload = {"clips": [{
+        "id": "abc", "status": "complete", "title": "測試曲",
+        "metadata": {"duration": 120.0, "tags": "warm folk",
+                     "prompt": "[Verse]\n夜色很輕\n[Chorus]\n慢一點也沒關係"},
+    }]}
+    clips = parse_feed_payload(payload)
+    assert clips[0].lyrics.startswith("[Verse]")
+    assert "慢一點" in clips[0].lyrics
+
+
+def test_feed_parsing_survives_missing_metadata_prompt():
+    """純音樂或 Suno 沒給歌詞時是空字串，不是 None，也不該炸掉"""
+    from src.suno import parse_feed_payload
+
+    clips = parse_feed_payload({"clips": [{"id": "abc", "status": "complete"}]})
+    assert clips[0].lyrics == ""

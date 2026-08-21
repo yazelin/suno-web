@@ -70,3 +70,18 @@ def test_create_prunes_automatically(tmp_path, monkeypatch):
     for i in range(5):
         store.create({"n": i})
     assert len(store.list_recent(100)) <= 2
+
+
+def test_clip_api_includes_lyrics_when_present():
+    """歌詞要出現在 API 回應裡，呼叫端才拿得到"""
+    from src.jobs import Clip
+
+    c = Clip(id="x", lyrics="[Verse]\n夜色很輕")
+    assert c.to_api("job1")["lyrics"] == "[Verse]\n夜色很輕"
+
+
+def test_clip_api_omits_empty_lyrics():
+    """沒歌詞就不要塞一個空欄位進去"""
+    from src.jobs import Clip
+
+    assert "lyrics" not in Clip(id="x").to_api("job1")

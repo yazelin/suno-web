@@ -183,7 +183,8 @@ curl -s -H "x-api-key: YOUR_KEY" http://localhost:8071/api/jobs/d9025d66e20a
       "duration": 199.88,
       "downloadable": true,
       "audio_url": "/api/jobs/d9025d66e20a/files/00000000-1111-2222-3333-444444444444.mp3",
-      "image_url": "/api/jobs/d9025d66e20a/files/00000000-1111-2222-3333-444444444444.jpeg"
+      "image_url": "/api/jobs/d9025d66e20a/files/00000000-1111-2222-3333-444444444444.jpeg",
+      "lyrics": "[Verse]\n夜色很輕\n[Chorus]\n慢一點也沒關係"
     }
   ],
   "error": null,
@@ -194,6 +195,7 @@ curl -s -H "x-api-key: YOUR_KEY" http://localhost:8071/api/jobs/d9025d66e20a
 
 - `status`：`queued`、`generating`、`done`、`error` 四種。
 - `clips`：這一單新生出來的全部 clip。`audio_url` 與 `image_url` 只有檔案真的存下來才會出現。
+- `lyrics`：Suno 實際唱的歌詞，從 clip 的 `metadata.prompt` 側錄而來。Simple 模式歌詞是 Suno 自己寫的，這個欄位是唯一拿得到的地方。純音樂或 Suno 沒給時整個欄位不出現。
 - VIP 鎖住的 clip 標 `downloadable: false`、只留 metadata，整單不算失敗（本輪驗收沒有遇到這種 clip，見「已知限制」）。
 - 失敗時 `error` 是錯誤碼、`error_message` 是一句人看得懂的說明。錯誤碼表在 [AGENTS.md](AGENTS.md)。
 - job 記錄寫在 `~/.suno-web/jobs.db`，服務重啟後查舊 job 仍拿得到記錄與已經存下來的音檔。記錄只留最新 1000 筆，建立新 job 時自動裁切；音檔則依 `AUDIO_RETENTION_DAYS` 分開清。
