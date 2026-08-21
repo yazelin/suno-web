@@ -67,10 +67,14 @@ Suno 的 CDN 原檔什麼都沒有（ffprobe 看只有一個 `comment=made with 
 | ID3 幀 | 內容 |
 |---|---|
 | `TIT2` | 歌名（clip 的 title）|
-| `TPE1` | `Suno` |
+| `TPE1` | 署名，由 `TAG_ARTIST` 決定（未設則 `Suno`）|
+| `TENC` | 工具名，由 `TAG_ENCODER` 決定（未設則 `suno-web`）|
 | `TALB` | 曲風（clip 的 `metadata.tags`）|
 | `USLT` | 歌詞（clip 的 `metadata.prompt`）|
 | `APIC` | 封面（`image_url` 抓下來那張）|
+
+`TPE1` 是「演出者」，不是工具名。Suno 官方下載寫的是帳號擁有者，所以這裡交給
+`TAG_ARTIST` 由各自部署決定；工具名放 `TENC`（encoded by），那才是它該待的欄位。
 
 歌詞用 **USLT** 不用 SYLT：播放器對 SYLT 的支援普遍很差。要放帶時間軸的 LRC 也是放
 同一個幀，讀得懂的播放器就會當動態歌詞用。

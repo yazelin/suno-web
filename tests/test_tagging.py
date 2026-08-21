@@ -61,3 +61,27 @@ class TestTagMp3:
 
     def test_missing_file_returns_false(self, tmp_path):
         assert tag_mp3(tmp_path / "nope.mp3", title="x") is False
+
+
+class TestSignature:
+    def test_artist_comes_from_config(self, mp3, monkeypatch):
+        from src import config
+        monkeypatch.setattr(config.settings, "tag_artist", "林亞澤")
+        tag_mp3(mp3, title="x")
+        assert _read(mp3)["TPE1"].text[0] == "林亞澤"
+
+    def test_explicit_artist_wins(self, mp3, monkeypatch):
+        from src import config
+        monkeypatch.setattr(config.settings, "tag_artist", "設定檔的值")
+        tag_mp3(mp3, title="x", artist="呼叫端指定的")
+        assert _read(mp3)["TPE1"].text[0] == "呼叫端指定的"
+
+    def test_tool_name_goes_in_tenc_not_artist(self, mp3, monkeypatch):
+        """工具名該待在 TENC（encoded by），不是演出者欄位"""
+        from src import config
+        monkeypatch.setattr(config.settings, "tag_artist", "林亞澤")
+        monkeypatch.setattr(config.settings, "tag_encoder", "suno-web")
+        tag_mp3(mp3, title="x")
+        t = _read(mp3)
+        assert t["TPE1"].text[0] == "林亞澤"
+        assert t["TENC"].text[0] == "suno-web"

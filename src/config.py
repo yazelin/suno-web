@@ -82,6 +82,12 @@ class Settings:
         )
         self.audio_retention_days: int = _int(os.getenv("AUDIO_RETENTION_DAYS"), 14)
 
+        # 寫進下載檔 ID3 的署名。artist 是「演出者」，Suno 官方下載寫的是帳號
+        # 擁有者，所以這裡預設留空、由各自部署決定；沒設就退回 "Suno"。
+        # 工具名放 TENC（encoded by），那才是它該待的欄位。
+        self.tag_artist: str = os.getenv("TAG_ARTIST", "").strip() or "Suno"
+        self.tag_encoder: str = os.getenv("TAG_ENCODER", "").strip() or "suno-web"
+
 
 settings = Settings()
 

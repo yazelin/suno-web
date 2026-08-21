@@ -7,6 +7,9 @@ Suno 的 CDN 原檔什麼都沒有 —— ffprobe 看只有一個 `comment=made 
 既然下載當下這些資料全部都在手上（歌名、曲風、歌詞、封面），自己寫進去比去
 逆向那個未公開端點穩：不依賴 Suno 的私有介面，他們改版也不會斷。
 
+`artist`(TPE1)是「演出者」，Suno 官方下載寫的是帳號擁有者，所以這裡由 `TAG_ARTIST`
+決定，各自部署設自己的；工具名放 `TENC`(encoded by)，那才是它該待的欄位。
+
 歌詞用 **USLT** 不用 SYLT：glitch-music 的 `js/id3.js` 明說不處理 SYLT，但讀
 USLT，而且會把讀到的內容直接當 `lrc` 丟給 `parseLrc` —— 所以之後真要做動態
 歌詞，把 LRC 格式的文字放進同一個幀就會自動生效。
@@ -19,8 +22,9 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 
-def tag_mp3(path: Path, *, title: str, artist: str = "Suno", album: str = "",
-            lyrics: str = "", cover_path: Path | None = None) -> bool:
+def tag_mp3(path: Path, *, title: str, artist: str = "", album: str = "",
+            lyrics: str = "", cover_path: Path | None = None,
+            encoder: str = "") -> bool:
     """就地寫入 ID3 標籤，回報有沒有寫成功
 
     寫失敗只記一行 log。音檔本身是好的，標籤沒寫進去不該讓整單失敗。
@@ -29,8 +33,14 @@ def tag_mp3(path: Path, *, title: str, artist: str = "Suno", album: str = "",
         log.warning("要加標籤的檔案不存在：%s", path)
         return False
 
+    from .config import settings
+
+    artist = artist or settings.tag_artist
+    encoder = encoder or settings.tag_encoder
+
     try:
-        from mutagen.id3 import APIC, ID3, ID3NoHeaderError, TALB, TIT2, TPE1, USLT
+        from mutagen.id3 import (APIC, ID3, ID3NoHeaderError, TALB, TENC, TIT2,
+                                 TPE1, USLT)
     except ImportError:
         log.warning("mutagen 未安裝，mp3 不會帶標籤")
         return False
@@ -47,6 +57,8 @@ def tag_mp3(path: Path, *, title: str, artist: str = "Suno", album: str = "",
             tags.add(TPE1(encoding=3, text=artist))
         if album:
             tags.add(TALB(encoding=3, text=album))
+        if encoder:
+            tags.add(TENC(encoding=3, text=encoder))
         if lyrics:
             tags.add(USLT(encoding=3, lang="und", desc="", text=lyrics))
         if cover_path and Path(cover_path).is_file():
