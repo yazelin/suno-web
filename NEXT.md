@@ -8,8 +8,14 @@
 
 ## 待辦
 
-- [ ] 帳號 0 只剩 20 點（2 單），用完之後派工會自動跳過它。要補就再開一個免費帳號，`ssh -X` 到 .11 跑 `uv run suno-web login -w 4`，記得**真人手動生一單**開通（推銷彈窗 + `/api/c/check` 的 `required:true` 都靠這一步解掉），然後把 `.env` 的 `WORKER_COUNT` 加一並重啟。
-- [ ] 每月配額何時重置沒實測過。`monthly_usage` 歸零的時間點若不是月初，派工的「還能生幾單」估算會失準一天。下個月初對一次 `/api/health` 的 credits 就知道。
+- [ ] 四個帳號的餘額不平均。**2026-08-22 09:xx 實測：帳號 0＝50、1＝50、2＝100、3＝200，合計 400 點，還能生 40 單。**
+      （量法：在 .11 跑 `cd ~/suno-web && ./.venv/bin/python -c 'import asyncio,sys;sys.path.insert(0,".");from src.cli import _verify_login;[asyncio.run(_verify_login(w)) for w in range(4)]'`。
+      開無頭瀏覽器載入 create 頁、側錄 credits API 就有值，不生歌、不燒額度，四個約兩分鐘。
+      `/api/health` 的 credits 只有在該 worker 的瀏覽器活著時才有值，閒置關掉之後是 null。）
+      哪天真的見底，要補就再開一個免費帳號，`ssh -X` 到 .11 跑 `uv run suno-web login -w 4`，記得**真人手動生一單**開通（推銷彈窗 + `/api/c/check` 的 `required:true` 都靠這一步解掉），然後把 `.env` 的 `WORKER_COUNT` 加一並重啟。
+- [ ] 每月配額何時重置還沒定案，但**有一筆反證**：這份待辦 08-21 03:09 寫的是「帳號 0 只剩 20 點」，08-22 實測是 50 點，中間沒有人去加值。
+      所以重置點不是月初，比較像各帳號按自己的註冊日滾動。要確定就固定每天量一次上面那個指令，看哪一天跳回滿額。
+      在確定之前，派工的「還能生幾單」估算可能會在重置當天失準。
 - [ ] `LOGGED_OUT_MARKER` 還沒在真的登出畫面上正面驗證過。登入態哪天過期時，順手確認 job 正確回的是 `not_logged_in`，而非含糊的 `submit_failed`。
 - [ ] `.11` 的 Chrome 是把 deb 解在家目錄的，所以 `.env` 設了 `CHROME_NO_SANDBOX=true`。哪天用 apt 正式裝了 Chrome，把那行拿掉恢復沙箱。
 - [ ] 音檔目前留 14 天（`AUDIO_RETENTION_DAYS`）。四帳號跑滿一個月約 260 首、每首 2 到 4 MB，磁碟用量到時候看一眼再決定要不要縮短。
