@@ -154,11 +154,9 @@ def test_is_freshly_created_unknown_clip_id_returns_false():
     assert runner._is_freshly_created("missing", before=set(), submit_time=time.time()) is False
 
 
-def test_captcha_required_turns_into_its_own_error_code():
-    """被要求驗證碼時要講明白,不要含糊回「feed 沒出現新 clip」。"""
-    import asyncio
+def _failing_runner():
+    import asyncio  # noqa: F401
 
-    from src.jobs import GenerationError
     from src.suno import SunoRunner
 
     class FakeBrowser:
@@ -167,17 +165,61 @@ def test_captcha_required_turns_into_its_own_error_code():
     class FakeSettings:
         suno_url = "https://suno.com/create"
 
-    runner = SunoRunner(FakeBrowser(), FakeSettings())
-    runner.captcha_required = True
+    return SunoRunner(FakeBrowser(), FakeSettings())
+
+
+def test_captcha_required_alone_is_not_a_failure_reason():
+    """/api/c/check 回 required:true 是所有人的常態，不能拿來當失敗原因。
+
+    2026-08-27 實測：真人開的、當下生得出歌的瀏覽器，打同一支端點也回
+    required:true。舊版只要這個旗標是 true 就報 captcha_required，等於任何
+    原因的失敗都被貼上驗證碼的標籤。
+    """
+    import asyncio
+
+    from src.jobs import GenerationError
+
+    runner = _failing_runner()
+    runner.captcha_required = True          # 常態，不該影響分類
 
     with pytest.raises(GenerationError) as e:
         asyncio.run(runner._wait_new_ids(set(), 0.0, timeout=0.01))
-    assert e.value.code == "captcha_required"
+    assert e.value.code == "submit_failed"
+    assert "沒有任何生成請求送出去" in e.value.message
 
-    runner.captcha_required = False
-    with pytest.raises(GenerationError) as e2:
+
+def test_turnstile_error_reports_captcha_unsolved():
+    """真的攔到 Turnstile 錯誤才報驗證碼，而且要把錯誤字串帶出來"""
+    import asyncio
+
+    from src.jobs import GenerationError
+
+    runner = _failing_runner()
+    runner.captcha_required = True
+    runner.turnstile_errors.append("[Cloudflare Turnstile] Error: 300010.")
+
+    with pytest.raises(GenerationError) as e:
         asyncio.run(runner._wait_new_ids(set(), 0.0, timeout=0.01))
-    assert e2.value.code == "submit_failed"
+    assert e.value.code == "captcha_unsolved"
+    assert "300010" in e.value.message
+
+
+def test_submitted_but_no_clip_is_a_different_failure():
+    """生成請求送出去了卻等不到 clip，跟根本沒送出去是兩回事"""
+    import asyncio
+
+    from src.jobs import GenerationError
+
+    runner = _failing_runner()
+    runner.captcha_required = True
+    runner.generate_submitted = True
+    runner.turnstile_errors.append("[Cloudflare Turnstile] Error: 300010.")
+
+    with pytest.raises(GenerationError) as e:
+        asyncio.run(runner._wait_new_ids(set(), 0.0, timeout=0.01))
+    # 送出去了就不是驗證碼的問題，即使同時攔到 Turnstile 錯誤
+    assert e.value.code == "submit_failed"
+    assert "feed 沒有出現新 clip" in e.value.message
 
 
 def test_feed_parsing_picks_up_lyrics_from_metadata_prompt():

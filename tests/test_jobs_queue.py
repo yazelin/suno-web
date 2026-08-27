@@ -199,31 +199,13 @@ async def test_busy_flag_resets_after_job(tmp_path):
     assert queue._busy == [False]
 
 
-async def test_captcha_redispatches_to_next_account(tmp_path):
-    """0 號帳號被舉牌就改派給 1 號，整單仍然成功"""
-    tried = []
+async def test_captcha_no_longer_redispatches(tmp_path):
+    """換帳號重試已停用，一單失敗就是失敗，不要放大成四單。
 
-    def make_runner(idx, ok):
-        async def runner(job):
-            tried.append(idx)
-            if not ok:
-                raise captcha_error()
-            return [Clip(id="c1", downloadable=True, filename="c1.mp3")]
-        return runner
-
-    runners = [make_runner(0, False), make_runner(1, True)]
-    store, queue = make_queue(tmp_path, runners)
-    job = queue.submit({"prompt": "x"})
-    done = await run_all_workers(store, queue, job.id)
-
-    assert done.status == "done"
-    assert tried == [0, 1]
-    assert done.params["tried_workers"] == [0]   # 被舉牌的那個記下來
-    assert done.params["worker"] == 1            # 最後是誰生出來的
-
-
-async def test_captcha_on_every_account_finally_fails(tmp_path):
-    """四個帳號都被舉牌才算失敗，訊息要講清楚試過哪幾個"""
+    舊版對 captcha_required 換帳號，前提是「Suno 對這個帳號要求驗證碼」。
+    2026-08-27 實測推翻了那個前提：/api/c/check 對所有人都回 required:true。
+    換帳號救不了，只會把一次故障變成四次（08-22 那次兩分鐘內 12 筆失敗）。
+    """
     tried = []
 
     def make_runner(idx):
@@ -238,9 +220,8 @@ async def test_captcha_on_every_account_finally_fails(tmp_path):
     done = await run_all_workers(store, queue, job.id)
 
     assert done.status == "error"
-    assert done.error == "captcha_required"
-    assert sorted(tried) == [0, 1, 2, 3]         # 每個都真的試過一次
-    assert "0" in done.error_message and "3" in done.error_message
+    assert tried == [0], "只該試第一個帳號，不該輪下去"
+    assert not done.params.get("tried_workers")
 
 
 async def test_non_captcha_errors_do_not_redispatch(tmp_path):

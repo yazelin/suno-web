@@ -81,24 +81,31 @@ Suno 的 CDN 原檔什麼都沒有（ffprobe 看只有一個 `comment=made with 
 
 寫標籤失敗只記一行 log，不影響整單 —— 音檔本身是好的。
 
-### 撞到防機器人驗證碼會自動換帳號
+### 生成失敗時怎麼分類（換帳號重試已停用）
 
-Suno 會對信任度不足的帳號要求 Cloudflare 驗證碼（按下 Create 之前先打
-`/api/c/check`，回 `required: true`），那道勾選框程式點不過，這一單就送不出去。
+按下 Create 之前，前端會先打 `/api/c/check` 問要不要驗證碼。
 
-這種時候整單不會直接失敗，而是**改派給還沒試過的帳號重跑**。試過的帳號記在
-job 的 `tried_workers` 裡並跟著存進 DB，所以最多試到帳號用完就收斂。四個帳號
-全被要求才回 `captcha_required`，`error_message` 會列出試過哪幾個。
+**那支端點對所有人都回 `required: true`。** 2026-08-27 用真人開的、當下生得出歌
+的瀏覽器實測，回的是一模一樣的 `{"required": true, "captcha_version": 2}`。所以
+它是常態，不是「這個帳號被舉牌」。
 
-只有這一個錯誤碼會觸發改派。它不是猜的——只有 Suno 自己回 `required: true`
-時才標得上。其餘錯誤（登入態過期、selector 過期、點數用完）換帳號救不了，
-換了只是把別的帳號也白燒一遍。
+舊版把「等不到新 clip」加上「`required: true`」報成 `captcha_required`，等於**任何
+原因的失敗都被貼上驗證碼的標籤**，也因此觸發換帳號重試——一次故障被放大成四次
+（08-22 那次兩分鐘內 12 筆失敗就是這樣來的）。這兩件事都已經改掉。
 
-改派時 log 會留一行：
+現在的分類判準是「生成請求有沒有真的送出去」：
 
-```
-job a1b2c3d4e5f6：帳號 0 被要求防機器人驗證碼，改派給帳號 1
-```
+| 情況 | 錯誤碼 | 意思 |
+|---|---|---|
+| 生成請求送出去了，但 90 秒等不到新 clip | `submit_failed` | Suno 那端塞住，或 feed 側錄漏了 |
+| 沒送出去，且攔到 Turnstile 錯誤 | `captcha_unsolved` | 前端解不出 token，錯誤字串會帶在訊息裡 |
+| 沒送出去，也沒攔到 Turnstile 錯誤 | `submit_failed` | 按鈕沒按到、表單狀態不對、或卡在別處 |
+
+判斷「有沒有送出去」是側錄 studio-api 上路徑含 `generate` 的 POST；Turnstile 錯誤
+從瀏覽器 console 攔（例如 `[Cloudflare Turnstile] Error: 300010.`）。
+
+換帳號重試停用了，`_REDISPATCH_CODE` 設成 `None`。真的找到帳號層級的錯誤碼再打開，
+並在那裡寫清楚憑什麼認定它是帳號層級的。
 
 ### 為什麼寫入走 UI、讀取走側錄
 
@@ -347,7 +354,8 @@ V1 沒有瀏覽器自動自癒：建議外部監控定期打 `/api/health`，看
 
 ## 已知限制
 
-- **新帳號要先用真人的瀏覽器手動生一單。** 剛註冊的帳號有兩道關卡：頁面會蓋一個 Pro 方案推銷彈窗（把 Create 點擊吃掉），而且 `/api/c/check` 回 `required: true`（要驗證碼）。真人開 `suno-web login -w N` 那個視窗、關掉彈窗、手動生一首之後，彈窗不再出現、`/api/c/check` 也變成 `false`，自動化就一路暢通。四個帳號實測都是這樣。
+- **新帳號要先用真人的瀏覽器手動生一單。** 剛註冊的帳號會蓋一個 Pro 方案推銷彈窗，把 Create 點擊吃掉；真人開 `suno-web login -w N` 那個視窗、關掉彈窗、手動生一首之後就不再出現。
+  （2026-08-27 更正：這一條原本還寫「`/api/c/check` 會從 `true` 變 `false`」，那是錯的。那支端點對所有人恆為 `true`，包含真人開的、當下生得出歌的瀏覽器。手動生一單解決的是彈窗，不是驗證碼。）
 - **一定要用真的 Google Chrome，不能用 Playwright 內建的 Chromium。** Suno 在按下 Create 時會先打 `POST /api/c/check` 問要不要驗證碼。用 Playwright 內建 Chromium 時它回 `{"required": true}` 並跳出 Cloudflare Turnstile 的互動式勾選框，程式化點擊不被接受，生成請求送不出去；改用真 Chrome（本服務自己啟動、再用 CDP 接上）之後同一個端點回 `{"required": false}`，生成正常送出。`channel="chrome"` 讓 Playwright 去啟動也不行，必須自己起、自己接。實測記錄見 `docs/acceptance-2026-08-20.md` 第四、五節。
 - **自動化 Suno 網頁違反 Suno 服務條款，帳號有被封的風險。** 這是明講的取捨，要不要用請自己評估。
 - 派工預設「點數優先」：挑剩餘點數最多的帳號。帳號的月配額常常不一樣（實測 40／100／300／300），單純輪流會讓點數少的先見底、變成失敗來源。點數要跑過一單才觀測得到，還沒有數字的帳號用輪流去發掘；點數一樣多的帳號之間也輪流。

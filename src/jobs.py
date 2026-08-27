@@ -70,10 +70,17 @@ _KEEP_JOBS = 1000
 # 一單要多少點（實測：一單 10 點、出 4 首）
 CREDITS_PER_JOB = 10
 
-# 唯一會觸發「換帳號重試」的錯誤碼。這個碼不是猜的：只有 Suno 自己在
-# /api/c/check 回 required:true 時才會標上，等於它明講要驗證碼。其他錯誤
-# （登入態過期、selector 過期、點數用完）換帳號救不了，換了只是白燒。
-_REDISPATCH_CODE = "captcha_required"
+# 換帳號重試已停用。
+#
+# 舊版對 `captcha_required` 換帳號，前提是「Suno 對這個帳號要求驗證碼」。
+# 2026-08-27 實測推翻了那個前提：`/api/c/check` 對**所有人**都回
+# required:true，真人開的、當下生得出歌的瀏覽器也一樣。所以那不是帳號層級
+# 的問題，換帳號救不了 —— 08-22 那次「兩分鐘內 12 次失敗」就是一單被輪過
+# 四個帳號、每個都撞同一道牆，把一次故障放大成四次。
+#
+# 真的遇到帳號層級的錯誤碼再把這裡打開，並在上面寫清楚憑什麼認定它是
+# 帳號層級的。設成 None 代表任何錯誤都不換帳號。
+_REDISPATCH_CODE: str | None = None
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -287,7 +294,8 @@ class JobQueue:
     def _requeue_other(self, job: Job, failed_index: int) -> bool:
         """把這一單改派給還沒試過的帳號，回報有沒有排出去。
 
-        只給帳號層級的問題用（目前只有 `captcha_required`）。試過的帳號記在
+        只給帳號層級的問題用（目前沒有任何錯誤碼符合，見 `_REDISPATCH_CODE`
+        的說明）。試過的帳號記在
         `job.params["tried_workers"]` 並且跟著 job 存進 DB，所以最多試到帳號
         用完就一定收斂，不會在佇列之間繞圈。
         """
@@ -342,7 +350,7 @@ class JobQueue:
                         raise GenerationError("download_failed", "一首可下載的都沒有")
                     job.status = "done"
                 except GenerationError as e:
-                    if e.code == _REDISPATCH_CODE:
+                    if _REDISPATCH_CODE and e.code == _REDISPATCH_CODE:
                         if self._requeue_other(job, index):
                             log.warning(
                                 "job %s：帳號 %s 被要求防機器人驗證碼，改派給帳號 %s",

@@ -116,10 +116,20 @@ class SunoRunner:
         self._sniffer_tasks: set = set()
         self.logged_in: bool | None = None
         self.last_credits: int | None = None
-        # Suno 按下 Create 前會先問要不要驗證碼。required=true 代表會跳出
-        # 要人點的 Turnstile，程式化點擊過不了，生成請求根本送不出去。
-        # 實測這是綁帳號信任度的：有生成歷史的老帳號 false，新帳號 true。
+        # Suno 按下 Create 前會先打 /api/c/check 問要不要驗證碼。
+        #
+        # **這個值不能拿來判定失敗。** 2026-08-27 實測：真人開的、當下生得
+        # 出歌的瀏覽器，打同一支端點也回 required:true。它是所有人的常態，
+        # 不是「這個帳號被舉牌」。舊版把「等不到新 clip」＋「required:true」
+        # 報成 captcha_required，等於任何原因的失敗都被貼上驗證碼的標籤，
+        # 害人往「養帳號信任度」的方向查了兩天。留著這個欄位只為了觀測。
         self.captcha_required: bool | None = None
+        # 按下 Create 之後，前端有沒有真的把生成請求送出去。
+        # 斷在 check 與 generate 之間（Turnstile 解不出 token）跟送出去了但
+        # feed 沒回新 clip，是兩種完全不同的故障，錯誤訊息要分得出來。
+        self.generate_submitted: bool = False
+        # 攔到的 Turnstile 客戶端錯誤（例如 300010）。有值才代表真的是驗證碼壞掉。
+        self.turnstile_errors: list[str] = []
 
     # ---- 側錄 ----
 
@@ -136,7 +146,21 @@ class SunoRunner:
             self._sniffer_tasks.add(task)
             task.add_done_callback(self._sniffer_tasks.discard)
 
+        def _on_request(request) -> None:
+            # 生成請求的路徑會隨 Suno 改版變動，所以比對「studio-api 上的
+            # POST 且路徑含 generate」而不是寫死某一支。
+            if (request.method == "POST" and "studio-api" in request.url
+                    and "generate" in request.url):
+                self.generate_submitted = True
+
+        def _on_console(msg) -> None:
+            text = msg.text or ""
+            if "Turnstile" in text and ("Error" in text or "error" in text):
+                self.turnstile_errors.append(text[:200])
+
         page.on("response", _handle)
+        page.on("request", _on_request)
+        page.on("console", _on_console)
         self._sniffing = True
 
     async def _on_response(self, response) -> None:
@@ -173,6 +197,8 @@ class SunoRunner:
         self._install_sniffer(page)
         await self._ensure_on_create_page(page)
         before = set(self._clips.keys())
+        self.generate_submitted = False
+        self.turnstile_errors.clear()
         await self._fill_form(page, job.params)
         # Task 11 實機踩到的坑：帳號的 feed（含歷史舊 clip）常常不是在頁面剛
         # load 完就側錄得到，而是要等到按下 Create 之後、Suno 前端才一次把
@@ -301,14 +327,25 @@ class SunoRunner:
                 return {cid for cid in self._clips
                         if self._is_freshly_created(cid, before, submit_time)}
             await asyncio.sleep(0.5)
-        if self.captcha_required:
+        # 分三種故障，不要全部報成驗證碼。判準是「生成請求有沒有送出去」，
+        # 不是 /api/c/check 回什麼 —— 那個值對所有人都是 true。
+        if self.generate_submitted:
             raise GenerationError(
-                "captcha_required",
-                "Suno 對這個帳號要求 Cloudflare 驗證碼（/api/c/check 回 "
-                "required:true），程式點不過那道勾選框，生成送不出去。"
-                "實測這綁帳號信任度：先用真人開的瀏覽器手動生一兩單，"
-                "之後通常就會變成不要求。")
-        raise GenerationError("submit_failed", "按了 Create 但 feed 沒出現新 clip")
+                "submit_failed",
+                "生成請求送出去了，但 90 秒內 feed 沒有出現新 clip。"
+                "可能是 Suno 那端塞住，或是 feed 的側錄漏掉了。")
+        if self.turnstile_errors:
+            raise GenerationError(
+                "captcha_unsolved",
+                "前端卡在 Cloudflare Turnstile，解不出 token，所以生成請求"
+                f"從來沒有送出去。攔到的錯誤：{self.turnstile_errors[-1]}。"
+                "300010 那一類屬於挑戰執行失敗，不一定代表被判定成機器人。")
+        raise GenerationError(
+            "submit_failed",
+            "按了 Create，但沒有任何生成請求送出去，也沒有攔到 Turnstile 錯誤。"
+            "可能是按鈕沒真的被按到、表單狀態不對，或前端卡在別的地方。"
+            f"（參考：/api/c/check 回 required={self.captcha_required}，"
+            "這個值對所有人都是 true，不是失敗原因）")
 
     async def _wait_terminal(self, page: Page, ids: set[str],
                              refresh_interval: float = 20.0) -> list[RawClip]:
