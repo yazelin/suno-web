@@ -8,7 +8,43 @@
 
 Playwright 仍然在用，但角色只剩 **CDP 客戶端**：`connect_over_cdp` 接上之後，靠它做 locator 的自動等待與重試、`page.on("response")` 側錄 feed、帶著瀏覽器 cookie 下載音檔。**啟動瀏覽器那一半刻意不給它做**，因為 Playwright 啟動的瀏覽器（不論 `channel` 是 chromium 還是 chrome）過不了 Suno 的 Cloudflare Turnstile。理由與對照實驗見「已知限制」。
 
-> **先看這個：** 自動化 Suno 網頁違反 Suno 服務條款，帳號有被封的風險。詳見「已知限制」。
+> **先看這個（2026-09-03 更新）：本服務現在需要付費 Suno 帳號。**
+>
+> Suno 把免費層改成**終身只能下載 7 首**（yazelin 回報）。本服務的價值建立在
+> 「用免費帳號的月配額生歌」，那個前提沒有了：四個免費帳號加起來一輩子 28 首，
+> 而且不會回補。免費帳號請不要再投入，程式本身沒問題，換付費帳號就能用。
+>
+> 另外有一條**沒查完的故障**擋在前面，見「生成目前是壞的」那一節。
+>
+> **還有：** 自動化 Suno 網頁違反 Suno 服務條款，帳號有被封的風險。詳見「已知限制」。
+
+## 生成目前是壞的（2026-09-03）
+
+按下 Create 之後，前端打 `/api/c/check`、拿到 `required: true`、印出
+`captcha required, awaiting verification`，然後**永遠停在那裡**。`generate` 請求
+一次都沒送出去（實測等滿 300 秒也沒有）。
+
+**已經排除的變因**，不要再從頭排一遍：
+
+| 變因 | 結果 |
+|---|---|
+| `/api/c/check` 回 `required: true` | **所有人都是**，真人開的、當下生得出歌的瀏覽器也一樣 |
+| headless 模式 | 換成有介面（`DISPLAY=:1`）沒有改變 |
+| `navigator.webdriver` | `--disable-blink-features=AutomationControlled` 關掉了，沒有改變 |
+| Chrome 沙箱 | `chown root:root chrome-sandbox` + `chmod 4755` 恢復沙箱，沒有改變 |
+| WebGL 指紋 | 有介面模式下是真的 Intel Mesa，沒有改變 |
+| IP、帳號信任度、登入態 | 同一台機器、同一個帳號、同一個 profile，真人生得出來 |
+| CDP 本身 | ask-bridge 也用 CDP，能過 chatgpt.com 的 Turnstile |
+| 等待時間不夠 | 等 300 秒，`generate` 還是沒發 |
+
+**唯一剩下的線索**：Turnstile 被載入兩次（console 有
+`Turnstile already has been loaded`），兩個 widget 搶 postMessage，出現
+`target origin ('https://challenges.cloudflare.com') does not match the recipient
+window's origin ('https://suno.com')`。所以 token 可能被送到錯的窗口。但**同樣的
+警告在真人能生成的瀏覽器上也有**，所以它不足以解釋差異。
+
+要往下查就是攔 iframe 之間的 postMessage、逆向 Turnstile 的回傳協定。考慮到免費層
+已經不可行、而 Cloudflare 隨時會改，這條線停在這裡。
 
 ## 安裝
 
@@ -343,7 +379,8 @@ V1 沒有瀏覽器自動自癒：建議外部監控定期打 `/api/health`，看
 
 ## 帳號前提
 
-服務綁一個免費 Suno 帳號，以下是 2026-08-20 實測的狀況：
+**2026-09-03 起免費帳號不再適用**：Suno 改成終身只能下載 7 首。以下這些數字是
+2026-08-20 在**舊的免費方案**上實測的，留著當歷史紀錄與付費方案的對照基準：
 
 - 模型固定用頁面預設的 v4.5-all。程式不碰模型下拉選單，其他模型要 Pro。
 - 一單生成出 2 首 clip，扣 10 點。
