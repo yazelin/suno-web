@@ -69,3 +69,4 @@
 1. **瀏覽器層必須是真 Chrome + CDP**，不能改回 Playwright 內建的 Chromium，也不能讓 Playwright 去啟動 Chrome。理由與對照實驗在 acceptance 第五節。
 2. **profile 不要跨機複製**。登入態長在哪台就在哪台用，兩台共用同一個帳號會被 Suno 輪換 token 踢掉。
 3. **Suno 改版時只修 `src/selectors.py`**。selector 與 feed 的 URL pattern 全部集中在那一檔，每個常數旁邊都有「這是畫面上的什麼、為什麼是這個值」的註解。
+- [ ] generate 連三單 captcha_unsolved(Turnstile 600010,worker 瀏覽器熱著也一樣,請求沒送出去不扣點);systemd 重啟要 sudo 密碼所以沒重啟過,先重啟再驗;BGM 這次已改走 gemini-web /api/music(Lyria)。另:gemini-web worker 2 音樂固定 27.4s 失敗(Gemini 回 error),音樂派工避開它
