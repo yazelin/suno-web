@@ -4,6 +4,13 @@
 
 ## 現況
 
+> **2026-09-03：需要付費帳號，而且生成目前是壞的。**
+> Suno 把免費層改成終身只能下載 7 首（yazelin 回報），四個免費帳號一輩子加起來 28 首，
+> 本服務原本「用免費月配額生歌」的前提沒有了。加上底下那條沒查完的 Turnstile 故障，
+> 這條線先停著。程式本身沒問題，換付費帳號、把 Turnstile 那條查完就能用。
+> 下面的待辦除了最後兩條，都是免費帳號時代的，換方案之後要重新量。
+
+
 服務跑在 192.168.11.11:8071，systemd `suno-web-api`（enabled）。對外走 nginx 的 `https://ching-tech.ddns.net/suno-web/`，管理台在 `/suno-web/admin`。四個 Suno 帳號、瀏覽器隨用隨開、派工點數優先。額度以實測為準（見待辦第一條），不要在這裡寫死數字——之前寫的 65 單跟待辦裡的 40 單對不起來，就是寫死害的。
 
 ## 待辦
@@ -19,14 +26,14 @@
       clip」＋「required:true」報成 captcha_required，等於任何失敗都被貼上驗證碼的標籤，
       並觸發換帳號重試，把一次故障放大成四次。現在改成看「生成請求有沒有真的送出去」
       分三類，換帳號重試停用。
-- [ ] **真正的故障還沒查出來。** 按下 Create 之後 `/api/c/check` 有發、回 200，然後就
-      停了——**沒有任何 generate 請求送出去**。真人那端 console 顯示
-      `[Cloudflare Turnstile] Error: 300010`、`Turnstile already has been loaded`、兩個
-      widget 搶 postMessage；自動化這端也攔到兩個 challenge iframe、兩組不同 sitekey。
-      待確認：這是 Suno 頁面自己的整合問題（那就等他們修），還是只有我們這端解不出
-      token。判準是手動生成功的時間點跟看到 300010 的時間點是否重疊。
-      **已排除的變因**：headless、`navigator.webdriver`、Chrome 沙箱、WebGL 指紋、IP、
-      帳號信任度、登入態、CDP 本身（ask-bridge 也用 CDP、能過 chatgpt.com 的 Turnstile）。
+- [ ] **真正的故障還沒查出來（已停工，2026-09-03）。** 按下 Create 之後 `/api/c/check`
+      有發、回 200，印出 `captcha required, awaiting verification`，然後永遠停在那裡，
+      `generate` 一次都沒送出去（等滿 300 秒也沒有）。
+      已排除的變因與唯一剩下的線索寫在 README 的「生成目前是壞的」那一節，要接手先讀那裡，
+      不要從頭再排一遍。停工的理由是免費層已經不可行，投報比不成立。
+- [ ] **換到付費帳號之後要重量的東西**：一單幾點、月配額多少、下載有沒有額外限制、
+      v4.5-all 以外的模型能不能選、wav 下載是否解鎖。上面那些數字全是免費方案時代的。
+
 - [ ] **加一支 `GET /api/credits`。** `/api/health` 的 credits 只在該 worker 瀏覽器活著時
       才有值，閒置十分鐘關掉之後永遠是 null，所以平常查不到餘額，每次都要 ssh 進去跑探測
       腳本（2026-08-22、08-24 各被問一次，這就是該收成 API 的訊號）。
